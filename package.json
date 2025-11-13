@@ -1,7 +1,7 @@
 {
   "name": "fdj-cards-bot",
-  "version": "2.0.0",
-  "description": "Bot de Discord con sistema de cartas coleccionables estilo Garam",
+  "version": "1.0.0",
+  "description": "Bot de Discord de cartas coleccionables y economía, estilo Garam.",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
@@ -12,7 +12,6 @@
   "dependencies": {
     "discord.js": "^14.14.1",
     "sqlite3": "^5.1.6",
-    "dotenv": "^16.3.1",
-    "axios": "^1.6.2"
+    "dotenv": "^16.4.5"
   }
 }
