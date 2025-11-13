@@ -10,3 +10,6 @@ database.sqlite
 # Archivos temporales
 *.tmp
 *.log
+
+# Railway
+railway.toml
