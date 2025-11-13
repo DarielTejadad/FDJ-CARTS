@@ -1,0 +1,12 @@
+# Dependencias
+node_modules/
+
+# Variables de entorno
+.env
+
+# Base de datos
+database.sqlite
+
+# Archivos temporales
+*.tmp
+*.log
