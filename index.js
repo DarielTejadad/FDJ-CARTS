@@ -64,7 +64,7 @@ function initializeDatabase() {
     db.run(`CREATE TABLE IF NOT EXISTS card_drops (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         card_id INTEGER NOT NULL,
-        drop_message_id TEXT, // Guardamos el ID del mensaje para poder editarlo/borrarlo si es necesario
+        drop_message_id TEXT,
         claimed_by TEXT DEFAULT NULL,
         claimed_at INTEGER DEFAULT NULL,
         FOREIGN KEY (card_id) REFERENCES cards(id)
@@ -197,11 +197,14 @@ client.on('interactionCreate', async interaction => {
                 const description = interaction.options.getString('descripcion');
                 const image_url = interaction.options.getString('imagen');
 
-                db.run('INSERT INTO cards (name, rarity, description, image_url) VALUES (?, ?, ?, ?)', [name, rarity, description, image_url], function(err) {
+                // Usamos prepared statements para evitar problemas con caracteres especiales en las URLs
+                const stmt = db.prepare('INSERT INTO cards (name, rarity, description, image_url) VALUES (?, ?, ?, ?)');
+                stmt.run([name, rarity, description, image_url], function(err) {
                     if (err) {
                         if (err.message.includes('UNIQUE constraint failed')) {
                             return interaction.reply({ content: `❌ Ya existe una carta llamada "${name}".`, ephemeral: true });
                         }
+                        console.error('Error al insertar carta:', err);
                         return interaction.reply({ content: '❌ Error al guardar la carta en la base de datos.', ephemeral: true });
                     }
                     const { emoji, color } = getRarityData(rarity);
@@ -216,16 +219,23 @@ client.on('interactionCreate', async interaction => {
                         .setColor(color);
                     interaction.reply({ embeds: [embed] });
                 });
+                stmt.finalize();
                 break;
             }
 
             case 'drop': {
                 db.get('SELECT * FROM card_drops WHERE claimed_by IS NULL', [], async (err, drop) => {
-                    if (err) return interaction.reply({ content: '❌ Error al buscar drops activos.', ephemeral: true });
+                    if (err) {
+                        console.error('Error al buscar drops activos:', err);
+                        return interaction.reply({ content: '❌ Error al buscar drops activos.', ephemeral: true });
+                    }
                     if (drop) return interaction.reply({ content: '❌ Ya hay una carta en drop. ¡Usa `/claim` para reclamarla!', ephemeral: true });
 
                     db.get('SELECT * FROM cards ORDER BY RANDOM() LIMIT 1', [], async (err, card) => {
-                        if (err) return interaction.reply({ content: '❌ Error al obtener una carta aleatoria.', ephemeral: true });
+                        if (err) {
+                            console.error('Error al obtener carta aleatoria:', err);
+                            return interaction.reply({ content: '❌ Error al obtener una carta aleatoria.', ephemeral: true });
+                        }
                         if (!card) return interaction.reply({ content: '❌ No hay cartas en el sistema. Pide a un admin que añada algunas.', ephemeral: true });
 
                         const { emoji, color } = getRarityData(card.rarity);
@@ -240,22 +250,45 @@ client.on('interactionCreate', async interaction => {
                             .setColor(color);
 
                         const msg = await interaction.reply({ embeds: [embed], fetchReply: true });
-                        db.run('INSERT INTO card_drops (card_id, drop_message_id) VALUES (?, ?)', [card.id, msg.id]);
+                        
+                        // Usamos prepared statement para insertar el drop
+                        const stmt = db.prepare('INSERT INTO card_drops (card_id, drop_message_id) VALUES (?, ?)');
+                        stmt.run([card.id, msg.id], function(err) {
+                            if (err) {
+                                console.error('Error al crear drop:', err);
+                                // No mostramos error al usuario para no interrumpir el juego
+                            }
+                        });
+                        stmt.finalize();
                     });
                 });
                 break;
             }
 
             case 'claim': {
-                db.get(`SELECT cd.*, c.name, c.rarity, c.image_url FROM card_drops cd JOIN cards c ON cd.card_id = c.id WHERE cd.claimed_by IS NULL LIMIT 1`, [], async (err, drop) => {
-                    if (err) return interaction.reply({ content: '❌ Error al buscar el drop actual.', ephemeral: true });
+                const stmt = db.prepare(`SELECT cd.*, c.name, c.rarity, c.image_url FROM card_drops cd JOIN cards c ON cd.card_id = c.id WHERE cd.claimed_by IS NULL LIMIT 1`);
+                stmt.get([], async (err, drop) => {
+                    if (err) {
+                        console.error('Error al buscar el drop actual:', err);
+                        return interaction.reply({ content: '❌ Error al buscar el drop actual.', ephemeral: true });
+                    }
                     if (!drop) return interaction.reply({ content: '❌ No hay ninguna carta para reclamar. ¡Usa `/drop` para lanzar una!', ephemeral: true });
                     
-                    db.run('UPDATE card_drops SET claimed_by = ?, claimed_at = ? WHERE id = ?', [user.id, Date.now(), drop.id], function(err) {
-                        if (err) return interaction.reply({ content: '❌ Error al reclamar la carta.', ephemeral: true });
+                    // Actualizar el drop como reclamado
+                    const updateStmt = db.prepare('UPDATE card_drops SET claimed_by = ?, claimed_at = ? WHERE id = ?');
+                    updateStmt.run([user.id, Date.now(), drop.id], function(err) {
+                        if (err) {
+                            console.error('Error al reclamar la carta:', err);
+                            return interaction.reply({ content: '❌ Error al reclamar la carta.', ephemeral: true });
+                        }
                         
-                        db.run('INSERT INTO user_inventory (user_id, card_id) VALUES (?, ?)', [user.id, drop.card_id], (err) => {
-                            if (err) return interaction.reply({ content: '❌ Error al añadir la carta a tu inventario.', ephemeral: true });
+                        // Añadir la carta al inventario del usuario
+                        const insertStmt = db.prepare('INSERT INTO user_inventory (user_id, card_id) VALUES (?, ?)');
+                        insertStmt.run([user.id, drop.card_id], (err) => {
+                            if (err) {
+                                console.error('Error al añadir carta al inventario:', err);
+                                return interaction.reply({ content: '❌ Error al añadir la carta a tu inventario.', ephemeral: true });
+                            }
                             
                             const { emoji, color } = getRarityData(drop.rarity);
                             const embed = new EmbedBuilder()
@@ -266,14 +299,21 @@ client.on('interactionCreate', async interaction => {
                             
                             interaction.reply({ embeds: [embed] });
                         });
+                        insertStmt.finalize();
                     });
+                    updateStmt.finalize();
                 });
+                stmt.finalize();
                 break;
             }
 
             case 'inventory': {
-                db.all(`SELECT c.name, c.rarity, COUNT(c.id) as count FROM user_inventory ui JOIN cards c ON ui.card_id = c.id WHERE ui.user_id = ? GROUP BY c.id`, [user.id], (err, rows) => {
-                    if (err) return interaction.reply({ content: '❌ Error al cargar tu inventario.', ephemeral: true });
+                const stmt = db.prepare(`SELECT c.name, c.rarity, COUNT(c.id) as count FROM user_inventory ui JOIN cards c ON ui.card_id = c.id WHERE ui.user_id = ? GROUP BY c.id`);
+                stmt.all([user.id], (err, rows) => {
+                    if (err) {
+                        console.error('Error al cargar inventario:', err);
+                        return interaction.reply({ content: '❌ Error al cargar tu inventario.', ephemeral: true });
+                    }
                     if (rows.length === 0) return interaction.reply({ content: 'Tu inventario está vacío. ¡Usa `/claim` para conseguir cartas!', ephemeral: true });
 
                     const embed = new EmbedBuilder()
@@ -287,17 +327,26 @@ client.on('interactionCreate', async interaction => {
                     });
                     interaction.reply({ embeds: [embed] });
                 });
+                stmt.finalize();
                 break;
             }
 
             case 'cardinfo': {
                 const cardName = interaction.options.getString('nombre');
-                db.get('SELECT * FROM cards WHERE name = ?', [cardName], (err, card) => {
-                    if (err) return interaction.reply({ content: '❌ Error al buscar la carta.', ephemeral: true });
+                const stmt = db.prepare('SELECT * FROM cards WHERE name = ?');
+                stmt.get([cardName], (err, card) => {
+                    if (err) {
+                        console.error('Error al buscar carta:', err);
+                        return interaction.reply({ content: '❌ Error al buscar la carta.', ephemeral: true });
+                    }
                     if (!card) return interaction.reply({ content: `❌ No se encontró ninguna carta llamada "${cardName}".`, ephemeral: true });
                     
-                    db.get('SELECT COUNT(*) as count FROM user_inventory WHERE user_id = ? AND card_id = ?', [user.id, card.id], (err, userCard) => {
-                        if (err) return interaction.reply({ content: '❌ Error al verificar tus copias.', ephemeral: true });
+                    const countStmt = db.prepare('SELECT COUNT(*) as count FROM user_inventory WHERE user_id = ? AND card_id = ?');
+                    countStmt.get([user.id, card.id], (err, userCard) => {
+                        if (err) {
+                            console.error('Error al verificar copias de carta:', err);
+                            return interaction.reply({ content: '❌ Error al verificar tus copias.', ephemeral: true });
+                        }
                         const { emoji, color } = getRarityData(card.rarity);
                         const embed = new EmbedBuilder()
                             .setTitle(`${emoji} ${card.name}`)
@@ -310,14 +359,20 @@ client.on('interactionCreate', async interaction => {
                             .setColor(color);
                         interaction.reply({ embeds: [embed] });
                     });
+                    countStmt.finalize();
                 });
+                stmt.finalize();
                 break;
             }
 
             // =================== COMANDOS DE ECONOMÍA ===================
             case 'balance': {
-                db.get('SELECT money FROM users WHERE user_id = ?', [user.id], (err, row) => {
-                    if (err) return interaction.reply({ content: '❌ Error al obtener tu saldo.', ephemeral: true });
+                const stmt = db.prepare('SELECT money FROM users WHERE user_id = ?');
+                stmt.get([user.id], (err, row) => {
+                    if (err) {
+                        console.error('Error al obtener saldo:', err);
+                        return interaction.reply({ content: '❌ Error al obtener tu saldo.', ephemeral: true });
+                    }
                     const embed = new EmbedBuilder()
                         .setTitle(`💰 Saldo de ${user.username}`)
                         .setDescription(`Tienes **${row.money}** monedas.`)
@@ -325,26 +380,37 @@ client.on('interactionCreate', async interaction => {
                         .setThumbnail(user.displayAvatarURL());
                     interaction.reply({ embeds: [embed] });
                 });
+                stmt.finalize();
                 break;
             }
 
             case 'daily': {
                 const today = new Date().toISOString().slice(0, 10); // Formato YYYY-MM-DD
-                db.get('SELECT last_daily FROM users WHERE user_id = ?', [user.id], (err, row) => {
-                    if (err) return interaction.reply({ content: '❌ Error al verificar tu recompensa diaria.', ephemeral: true });
+                const stmt = db.prepare('SELECT last_daily FROM users WHERE user_id = ?');
+                stmt.get([user.id], (err, row) => {
+                    if (err) {
+                        console.error('Error al verificar recompensa diaria:', err);
+                        return interaction.reply({ content: '❌ Error al verificar tu recompensa diaria.', ephemeral: true });
+                    }
                     if (row.last_daily === today) {
                         return interaction.reply({ content: '❌ Ya has reclamado tu recompensa diaria hoy. ¡Vuelve mañana!', ephemeral: true });
                     }
 
-                    db.run('UPDATE users SET money = money + 50, last_daily = ? WHERE user_id = ?', [today, user.id], (err) => {
-                        if (err) return interaction.reply({ content: '❌ Error al añadir tus monedas.', ephemeral: true });
+                    const updateStmt = db.prepare('UPDATE users SET money = money + 50, last_daily = ? WHERE user_id = ?');
+                    updateStmt.run([today, user.id], (err) => {
+                        if (err) {
+                            console.error('Error al añadir monedas diarias:', err);
+                            return interaction.reply({ content: '❌ Error al añadir tus monedas.', ephemeral: true });
+                        }
                         const embed = new EmbedBuilder()
                             .setTitle('🎁 Recompensa Diaria')
                             .setDescription('Has recibido **50 monedas**. ¡Vuelve mañana para reclamar más!')
                             .setColor(0x00FF00);
                         interaction.reply({ embeds: [embed] });
                     });
+                    updateStmt.finalize();
                 });
+                stmt.finalize();
                 break;
             }
 
@@ -355,16 +421,26 @@ client.on('interactionCreate', async interaction => {
                 if (targetUser.id === user.id) return interaction.reply({ content: '❌ No puedes regalarte monedas a ti mismo.', ephemeral: true });
                 await ensureUserExists(targetUser.id, targetUser.username);
 
-                db.get('SELECT money FROM users WHERE user_id = ?', [user.id], (err, senderRow) => {
-                    if (err) return interaction.reply({ content: '❌ Error al verificar tu saldo.', ephemeral: true });
+                const stmt = db.prepare('SELECT money FROM users WHERE user_id = ?');
+                stmt.get([user.id], (err, senderRow) => {
+                    if (err) {
+                        console.error('Error al verificar saldo para regalo:', err);
+                        return interaction.reply({ content: '❌ Error al verificar tu saldo.', ephemeral: true });
+                    }
                     if (senderRow.money < amount) return interaction.reply({ content: `❌ No tienes suficiente dinero. Tu saldo es de ${senderRow.money} monedas.`, ephemeral: true });
 
                     db.serialize(() => {
                         db.run('BEGIN TRANSACTION');
-                        db.run('UPDATE users SET money = money - ? WHERE user_id = ?', [amount, user.id]);
-                        db.run('UPDATE users SET money = money + ? WHERE user_id = ?', [amount, targetUser.id]);
+                        
+                        const removeStmt = db.prepare('UPDATE users SET money = money - ? WHERE user_id = ?');
+                        removeStmt.run([amount, user.id]);
+                        
+                        const addStmt = db.prepare('UPDATE users SET money = money + ? WHERE user_id = ?');
+                        addStmt.run([amount, targetUser.id]);
+                        
                         db.run('COMMIT', (err) => {
                             if (err) {
+                                console.error('Error en transferencia:', err);
                                 db.run('ROLLBACK');
                                 return interaction.reply({ content: '❌ La transferencia falló. Por favor, inténtalo de nuevo.', ephemeral: true });
                             }
@@ -374,8 +450,12 @@ client.on('interactionCreate', async interaction => {
                                 .setColor(0x00AE86);
                             interaction.reply({ embeds: [embed] });
                         });
+                        
+                        removeStmt.finalize();
+                        addStmt.finalize();
                     });
                 });
+                stmt.finalize();
                 break;
             }
 
@@ -385,10 +465,15 @@ client.on('interactionCreate', async interaction => {
                 const amount = interaction.options.getInteger('cantidad');
                 await ensureUserExists(targetUser.id, targetUser.username);
 
-                db.run('UPDATE users SET money = money + ? WHERE user_id = ?', [amount, targetUser.id], (err) => {
-                    if (err) return interaction.reply({ content: '❌ Error al añadir dinero.', ephemeral: true });
+                const stmt = db.prepare('UPDATE users SET money = money + ? WHERE user_id = ?');
+                stmt.run([amount, targetUser.id], (err) => {
+                    if (err) {
+                        console.error('Error al añadir dinero:', err);
+                        return interaction.reply({ content: '❌ Error al añadir dinero.', ephemeral: true });
+                    }
                     interaction.reply(`✅ Se han añadido **${amount}** monedas a **${targetUser.username}**.`);
                 });
+                stmt.finalize();
                 break;
             }
 
@@ -396,26 +481,45 @@ client.on('interactionCreate', async interaction => {
                 const targetUser = interaction.options.getUser('usuario');
                 const amount = interaction.options.getInteger('cantidad');
 
-                db.get('SELECT money FROM users WHERE user_id = ?', [targetUser.id], (err, row) => {
-                    if (err) return interaction.reply({ content: '❌ Error al verificar saldo del usuario.', ephemeral: true });
+                const stmt = db.prepare('SELECT money FROM users WHERE user_id = ?');
+                stmt.get([targetUser.id], (err, row) => {
+                    if (err) {
+                        console.error('Error al verificar saldo para quitar dinero:', err);
+                        return interaction.reply({ content: '❌ Error al verificar saldo del usuario.', ephemeral: true });
+                    }
                     if (row.money < amount) return interaction.reply({ content: `❌ El usuario solo tiene ${row.money} monedas. No se pueden quitar ${amount}.`, ephemeral: true });
 
-                    db.run('UPDATE users SET money = money - ? WHERE user_id = ?', [amount, targetUser.id], (err) => {
-                        if (err) return interaction.reply({ content: '❌ Error al quitar dinero.', ephemeral: true });
+                    const updateStmt = db.prepare('UPDATE users SET money = money - ? WHERE user_id = ?');
+                    updateStmt.run([amount, targetUser.id], (err) => {
+                        if (err) {
+                            console.error('Error al quitar dinero:', err);
+                            return interaction.reply({ content: '❌ Error al quitar dinero.', ephemeral: true });
+                        }
                         interaction.reply(`✅ Se han quitado **${amount}** monedas a **${targetUser.username}**.`);
                     });
+                    updateStmt.finalize();
                 });
+                stmt.finalize();
                 break;
             }
 
             case 'resetuser': {
                 const targetUser = interaction.options.getUser('usuario');
                 db.serialize(() => {
-                    db.run('DELETE FROM user_inventory WHERE user_id = ?', [targetUser.id]);
-                    db.run('UPDATE users SET money = 100, last_daily = NULL WHERE user_id = ?', [targetUser.id], (err) => {
-                        if (err) return interaction.reply({ content: '❌ Error al resetear al usuario.', ephemeral: true });
+                    const deleteStmt = db.prepare('DELETE FROM user_inventory WHERE user_id = ?');
+                    deleteStmt.run([targetUser.id]);
+                    
+                    const updateStmt = db.prepare('UPDATE users SET money = 100, last_daily = NULL WHERE user_id = ?');
+                    updateStmt.run([targetUser.id], (err) => {
+                        if (err) {
+                            console.error('Error al resetear usuario:', err);
+                            return interaction.reply({ content: '❌ Error al resetear al usuario.', ephemeral: true });
+                        }
                         interaction.reply(`✅ Todos los datos de **${targetUser.username}** han sido eliminados. Su saldo ahora es de 100 monedas.`);
                     });
+                    
+                    deleteStmt.finalize();
+                    updateStmt.finalize();
                 });
                 break;
             }
