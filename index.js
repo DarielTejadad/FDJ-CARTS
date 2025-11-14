@@ -1,14 +1,29 @@
 // ========================================
-// SISTEMA DE BIENVENIDA "WOW" (WFDJ Welcome)
+// IMPORTACIONES Y CONFIGURACIÓN INICIAL
 // ========================================
+const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentType } = require('discord.js');
+require('dotenv').config();
 
-// --- ID del canal de bienvenida (¡RECUERDA CAMBIARLO!) ---
-const WELCOME_CHANNEL_ID = '1438947796873904170'; // <--- CAMBIA ESTO
+// --- CONFIGURACIÓN ---
+const WELCOME_CHANNEL_ID = '1438947796873904170'; // ID del canal de bienvenidas
+const WELCOME_GIF_URL = 'https://i.imgur.com/tQ0yLjF.gif'; // <--- CAMBIA ESTO por tu GIF animado
+const BOT_ICON_URL = 'https://i.imgur.com/pBFAaJ3.png'; // <--- Puedes cambiarlo por el icono de tu bot
 
-// --- Función para crear el embed de bienvenida ---
+// ========================================
+// INICIALIZACIÓN DEL CLIENTE DE DISCORD
+// ========================================
+const client = new Client({
+    intents: [
+        GatewayIntentBits.Guilds,       // Necesario para eventos de servidor
+        GatewayIntentBits.GuildMembers  // Necesario para saber cuando un miembro se une
+    ]
+});
+
+// ========================================
+// FUNCIÓN PARA CREAR EL EMBED DE BIENVENIDA
+// ========================================
 function createWelcomeEmbed(member) {
     const memberCount = member.guild.memberCount;
-    const welcomeGifUrl = 'https://i.imgur.com/your-animated-welcome-gif.gif'; // <--- CAMBIA ESTO por tu GIF
 
     return new EmbedBuilder()
         .setColor(0x9B59B6) // Un púrpura elegante
@@ -17,8 +32,8 @@ function createWelcomeEmbed(member) {
             iconURL: member.guild.iconURL({ dynamic: true }) 
         })
         .setTitle(`¡Bienvenido/a, ${member.user.username}!`)
-        .setDescription('Estamos encantados de que te unas a nuestra comunidad. ¡Prepárate para una aventura épica llena de cartas, duelos y amigos!\n\nEres el miembro **#' + memberCount + '** en unirte.')
-        .setImage(welcomeGifUrl) // El GIF animado va aquí
+        .setDescription('Estamos encantados de que te unas a nuestra comunidad. ¡Prepárate para una aventura épica llena de cartas, duelos y amigos!\n\nEres el miembro **#' + memberCount + '** en unirse.')
+        .setImage(WELCOME_GIF_URL) // El GIF animado va aquí
         .setThumbnail(member.user.displayAvatarURL({ dynamic: true, size: 256 }))
         .addFields(
             { 
@@ -28,23 +43,26 @@ function createWelcomeEmbed(member) {
             },
             { 
                 name: '💡 Consejo Rápido', 
-                value: 'Usa `/profile` para ver tu perfil de jugador y `/claim` para conseguir tu primera carta gratis.', 
+                value: 'No olvides pasar por el canal de reglas y presentarte en el chat general.', 
                 inline: false 
             }
         )
         .setFooter({ 
-            text: `${config.bot.name} | Bienvenido a la familia`, 
-            iconURL: `https://i.imgur.com/pBFAaJ3.png` 
+            text: 'WFDJ | Bienvenido a la familia', 
+            iconURL: BOT_ICON_URL 
         })
         .setTimestamp();
 }
 
-// --- Evento que se dispara cuando un miembro se une ---
+// ========================================
+// EVENTO: BIENVENIDA DE UN NUEVO MIEMBRO
+// ========================================
 client.on('guildMemberAdd', async member => {
     // Buscar el canal de bienvenida
-    const welcomeChannel = member.guild.channels.cache.get(WELCOME_CHANNEL_ID);
+    const welcomeChannel = client.channels.cache.get(WELCOME_CHANNEL_ID);
     if (!welcomeChannel) {
-        return logger.error(`No se pudo encontrar el canal de bienvenida con ID: ${WELCOME_CHANNEL_ID}`);
+        console.error(`No se pudo encontrar el canal de bienvenida con ID: ${WELCOME_CHANNEL_ID}`);
+        return;
     }
 
     // Crear los botones interactivos
@@ -63,8 +81,8 @@ client.on('guildMemberAdd', async member => {
                 .setLabel('💬 Empezar a Chatear')
                 .setStyle(ButtonStyle.Primary), // Azul
             new ButtonBuilder()
-                .setCustomId('welcome_profile')
-                .setLabel('👤 Mi Perfil')
+                .setCustomId('welcome_info')
+                .setLabel('ℹ️ Más Info')
                 .setStyle(ButtonStyle.Success) // Verde
         );
 
@@ -95,7 +113,7 @@ client.on('guildMemberAdd', async member => {
                         embeds: [
                             new EmbedBuilder()
                                 .setTitle('📜 Reglas del Servidor')
-                                .setColor(config.bot.colors.warning)
+                                .setColor(0xF39C12) // Naranja
                                 .setDescription('Por favor, lee y sigue estas reglas para mantener un ambiente agradable para todos:')
                                 .addFields(
                                     { name: '1. Sé respetuoso', value: 'No se toleran insultos, acoso ni discriminación.' },
@@ -114,7 +132,7 @@ client.on('guildMemberAdd', async member => {
                         embeds: [
                             new EmbedBuilder()
                                 .setTitle('🎨 Roles de Autogestión')
-                                .setColor(config.bot.colors.info)
+                                .setColor(0x3498DB) // Azul
                                 .setDescription('¡Personaliza tu perfil y tu experiencia en el servidor!')
                                 .addFields(
                                     { name: '🎮 Rol de Gamer', value: 'Reacciona con 🎮 en el canal #roles para obtenerlo.' },
@@ -128,7 +146,7 @@ client.on('guildMemberAdd', async member => {
                     break;
 
                 case 'welcome_start':
-                    const generalChannel = member.guild.channels.cache.find(ch => ch.name === 'general' || ch.name === '💬-general');
+                    const generalChannel = member.guild.channels.cache.find(ch => ch.name === 'general' || ch.name === '💬-general' || ch.name === '🗣️-general');
                     if (generalChannel) {
                         await interaction.reply({
                             content: `¡Genial! Puedes empezar a conversar en ${generalChannel}. ¡Te esperamos allí!`,
@@ -142,28 +160,22 @@ client.on('guildMemberAdd', async member => {
                     }
                     break;
 
-                case 'welcome_profile':
-                    // Intentar ejecutar el comando /profile para el usuario
-                    const profileCommand = commands.get('profile');
-                    if (profileCommand) {
-                        // Simular una interacción de comando para el usuario
-                        const fakeInteraction = {
-                            user: member,
-                            reply: async (options) => {
-                                // Como no podemos responder a la interacción original, enviamos un DM
-                                try {
-                                    await member.send({ embeds: options.embeds });
-                                    await interaction.reply({ content: '¡Te he enviado tu perfil por mensaje privado!', ephemeral: true });
-                                } catch (error) {
-                                    await interaction.reply({ content: 'No pude enviarte tu perfil por privado. Asegúrate de tener los DMs activados.', ephemeral: true });
-                                }
-                            },
-                            options: {
-                                getUser: () => member // Simular que no se eligió ningún otro usuario
-                            }
-                        };
-                        await profileCommand.execute(fakeInteraction, client);
-                    }
+                case 'welcome_info':
+                    await interaction.reply({
+                        embeds: [
+                            new EmbedBuilder()
+                                .setTitle('ℹ️ ¿Qué puedes hacer aquí?')
+                                .setColor(0x2ECC71) // Verde
+                                .setDescription('Nuestro servidor está lleno de actividades y gente increíble.')
+                                .addFields(
+                                    { name: '🎮 Juegos y Eventos', value: 'Participa en eventos de cartas, torneos y minijuegos.' },
+                                    { name: '💬 Chat Activo', value: 'Habla con otros miembros, comparte tus intereses y haz amigos.' },
+                                    { name: '📚 Soporte y Ayuda', value: '¿Tienes una duda? El staff está aquí para ayudarte.' }
+                                )
+                                .setFooter({ text: '¡Explora y diviértete!' })
+                        ],
+                        ephemeral: true
+                    });
                     break;
             }
         });
@@ -172,10 +184,26 @@ client.on('guildMemberAdd', async member => {
             // Cuando el colector expire, desactivar los botones
             welcomeMessage.edit({
                 components: [] // Eliminar la fila de botones
-            }).catch(err => logger.error('Error al editar el mensaje de bienvenida al expirar:', err));
+            }).catch(err => console.error('Error al editar el mensaje de bienvenida al expirar:', err));
         });
 
     } catch (error) {
-        logger.error(`Error al enviar el mensaje de bienvenida para ${member.user.tag}:`, error);
+        console.error(`Error al enviar el mensaje de bienvenida para ${member.user.tag}:`, error);
     }
+});
+
+// ========================================
+// EVENTO: BOT LISTO
+// ========================================
+client.once('ready', () => {
+    console.log(`✅ Bot de bienvenida "WFDJ Welcome" conectado como ${client.user.tag}!`);
+    console.log(`👂 Escuchando nuevos miembros en el canal: ${WELCOME_CHANNEL_ID}`);
+});
+
+// ========================================
+// INICIO DE SESIÓN DEL BOT
+// ========================================
+client.login(process.env.DISCORD_TOKEN).catch(err => {
+    console.error('❌ Error al iniciar sesión: Asegúrate de que DISCORD_TOKEN está configurado correctamente en el archivo .env.');
+    console.error(err);
 });
