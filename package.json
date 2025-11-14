@@ -1,17 +1,16 @@
 {
-  "name": "fdj-cards-bot",
+  "name": "wfdj-welcome-bot",
   "version": "1.0.0",
-  "description": "Bot de Discord de cartas coleccionables y economía, estilo Garam.",
+  "description": "Bot de Discord para un sistema de bienvenida espectacular.",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
   },
-  "keywords": ["discord", "bot", "cards", "economy", "garam"],
+  "keywords": ["discord", "bot", "welcome"],
   "author": "FDJ",
   "license": "MIT",
   "dependencies": {
     "discord.js": "^14.14.1",
-    "sqlite3": "^5.1.6",
     "dotenv": "^16.4.5"
   }
 }
