@@ -6,8 +6,8 @@ require('dotenv').config();
 
 // --- CONFIGURACIÓN ---
 const WELCOME_CHANNEL_ID = '1440017388404736003'; // ID del canal de bienvenidas
-const WELCOME_GIF_URL = 'https://i.imgur.com/tQ0yLjF.gif'; // <--- CAMBIA ESTO por tu GIF animado
-const BOT_ICON_URL = 'https://i.imgur.com/pBFAaJ3.png'; // <--- Puedes cambiarlo por el icono de tu bot
+const WELCOME_GIF_URL = 'https://cdn.discordapp.com/attachments/1440017484865601587/1440765080743706754/diseC3B1o-vectorial-de-banner-de-la-cinta-de-texto-de-bienvenida.png?ex=691f588b&is=691e070b&hm=1d662274c4e0badece6614be7c9fb33a4383248eb22e0e6d51d7cb04f2e19ab0'; // <--- CAMBIA ESTO por tu GIF animado
+const BOT_ICON_URL = 'https://cdn.discordapp.com/attachments/1440017484865601587/1440765080743706754/diseC3B1o-vectorial-de-banner-de-la-cinta-de-texto-de-bienvenida.png?ex=691f588b&is=691e070b&hm=1d662274c4e0badece6614be7c9fb33a4383248eb22e0e6d51d7cb04f2e19ab0'; // <--- Puedes cambiarlo por el icono de tu bot
 
 // ========================================
 // INICIALIZACIÓN DEL CLIENTE DE DISCORD
