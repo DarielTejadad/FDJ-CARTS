@@ -5,7 +5,7 @@ const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder
 require('dotenv').config();
 
 // --- CONFIGURACIÓN ---
-const WELCOME_CHANNEL_ID = '1438947796873904170'; // ID del canal de bienvenidas
+const WELCOME_CHANNEL_ID = '1440017388404736003'; // ID del canal de bienvenidas
 const WELCOME_GIF_URL = 'https://i.imgur.com/tQ0yLjF.gif'; // <--- CAMBIA ESTO por tu GIF animado
 const BOT_ICON_URL = 'https://i.imgur.com/pBFAaJ3.png'; // <--- Puedes cambiarlo por el icono de tu bot
 
